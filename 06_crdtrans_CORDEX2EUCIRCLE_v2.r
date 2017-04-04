@@ -55,12 +55,15 @@ nc.get.variable.list(nc.l)
 nc.get.proj4.string(nc.l, "tas")
 # so we need to know it from ...
 
-# TODO here we could execute CDO from R
-#
+# TODO here we could see how to execute CDO from R to get unrotated grid
+# https://github.com/adammwilson/SpatialAnalysisTutorials/blob/master/climate/code/CDO_Process.Rmd
+# system("cdo setmissval,-9999 -seltimestep,1 -remapnn,  ,in.nc, out.nc")
+
 r1 <- brick(in.in, var='tas')[[1]] # brick is faster than stack, but only from single file
 
-#For CORDEX grid the latlon on sphere is specified by the model settings. 
-#But it seems there is an issue with reprojecting. This needs to be checked.
+# For CORDEX grid the latlon on sphere is specified by the model settings. 
+# But it seems there is an issue with reprojecting. This needs to be checked.
+
 spf.proj4 <- CRS("+proj=longlat +a=6371229. +b=6371229. +towgs84=0,0,0 +no_defs") 
 wgs.proj4 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 proj4.l <- list(spf.proj4, wgs.proj4)
@@ -115,7 +118,7 @@ spplot(pr2, sp.layout=list(l1, l2), scales=list(draw=T, y = list(rot = 90), cex=
 # Compare with files from IG
 ###########################################################
 
-compare.dir <- "../coord_transform_IG/"
+compare.dir <- "./comparedir/"
 compare.f <-  "test2.tif"
 compare.in <- paste0(compare.dir, compare.f)
 
