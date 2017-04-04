@@ -1,0 +1,140 @@
+---
+title: "Processing CORDEX nc files"
+author: "Melita Perčec Tadić, melita.percec.tadic@cirus.dhz.hr"
+date: "3 April 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(width = 60)
+
+library(ncdf4)
+library(ncdf4.helpers)
+library(raster)
+library(maptools)
+library(rgdal)
+load("06_aggregateCORDEX2EUCIRCLEnc.rda")
+```
+
+# Control grid
+
+French example, resolution 9000 m, frgridascci1.asc, ascii grid, just points without attributes. This grid is 
+used for defining the extent of the area. We miss the original .proj file so proj4string is set during the processing.
+
+```{r }
+control.f <- "frgridascci1.asc" #file
+res(control.r)
+```
+
+## Set desired projection and domain extent
+
+We use the definition of the control grid projection and extent for re-projected grids.
+
+``` {r }
+pr.proj4 <- CRS("+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") 
+pr.ext <- extent(control.r)
+proj4string(control.r) <- pr.proj4
+```
+
+This is French domain.
+
+```{r pressure, echo=FALSE}
+spplot(control.r, scales=list(draw=T, y = list(rot = 90), cex=0.8))
+```
+
+# CORDEX nc file
+
+```{r}
+# TODO here we could execute CDO from R, but for now we use already un-rotated grid.
+in.f <- "tas_FR-11_MPI-M-MPI-ESM-LR_historical_r1i1p1_SMHI-RCA4_v1a_3hr_197001010000-197012312100
+        _lonlat_timestep1.nc"
+
+nc.l <- nc_open(in.in)
+nc.get.variable.list(nc.l)
+nc.get.proj4.string(nc.l, "tas")
+```
+
+
+```{r}
+r1 <- brick(in.in, var='tas')[[1]] # brick is faster than stack, but only from single file
+```
+
+We need the projection specification.
+
+For CORDEX grid the latlon on sphere is specified by the model settings. 
+But it seems there is an issue with re-projecting this type of model data. We should check this article on:
+http://www.pkrc.net/wrf-lambert.html to confirm which is the right transformation procedure.
+For CORDEX grid two proj4 definition are tested. 
+
+```{r}
+spf.proj4 <- CRS("+proj=longlat +a=6371229. +b=6371229. +towgs84=0,0,0 +no_defs")
+wgs.proj4 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+proj4.l <- list(spf.proj4, wgs.proj4)
+proj4string(r1) <- proj4.l[[1]]  # chose sphere
+r2 <- r1
+proj4string(r2) <- proj4.l[[2]]  # chose WGS84
+res(r1) #0.11°x0.11°
+```
+
+## Reproject and write ascii
+
+```{r}
+out.dir <- "./odir/"
+#dir.create(out.dir)
+pr1 <- projectRaster(from=r1, to=control.r, method='ngb',
+      overwrite=TRUE, format='ascii', filename= paste0(out.dir, "r1", names(r1),".ascii"))
+
+pr2 <- projectRaster(from=r2, to=control.r, method='ngb',
+       overwrite=TRUE, format='ascii', filename= paste0(out.dir,"r2", names(r2), ".ascii"))
+
+```
+
+# Compare grids defined with wgs and sphere ellipsoids
+
+## Administrative borders
+
+```{r}
+Fra <- getData('GADM', country='FRA', level=1)
+```
+
+```{r, echo=F}
+class(Fra); proj4string(Fra)
+Fra.pr <- spTransform(Fra, pr.proj4)
+Fra.l <- as(Fra.pr, "SpatialLines") 
+
+l1 <- list("sp.lines", Fra.l, col="black")
+plot(Fra.l)
+```
+
+## Control points
+
+For French area the control points are available in fr_natint1.shp, 9000 m.
+
+```{r}
+s1 <- readShapePoints(paste0(control.dir, "fr_natint1.shp"))
+```
+
+```{R}
+spplot(pr1, sp.layout=list(l1, l2), scales=list(draw=T, y = list(rot = 90), cex=0.8),
+       main=names(r1))
+```
+
+## Compare with reprojected files derived with gdalwarp. 
+
+
+In  STEP1_remap_gdalwarp.sh proj4 definition is set like: '+proj=latlong +units=degrees +no_defs'. The ellipsoid was not defined but the WGS ellipsoid is used by default.
+
+If the wgs.proj4 is used here, there is no difference in plots: 
+
+```{r}
+spplot(compare.b[[c(2,3)]], sp.layout = list(l1), 
+       scales=list(draw=T, y = list(rot = 90), cex=0.8), main="R  vs sh")
+```
+
+When sphere is used in sph.proj4 then there is a difference in plots. The image is shifted by about 20 km to the north. The expert opinion regarding the projections in CORDEX models would be useful.
+
+```{r}
+spplot(compare.b[[c(1,3)]], sp.layout = list(l1), 
+       scales=list(draw=T, y = list(rot = 90), cex=0.8), main="R vs sh")
+```
